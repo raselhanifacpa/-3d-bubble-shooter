@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>3D Bubble Shooter</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #111; }
+    canvas { display: block; }
+    #hud {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: #fff;
+      font-family: sans-serif;
+      z-index: 1;
+    }
+  </style>
+</head>
+<body>
+<div id="hud">
+  <div>Score: <span id="score">0</span></div>
+  <div>Shots Left: <span id="shots">5</span></div>
+</div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/controls/OrbitControls.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x111111);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+camera.position.set(0, 0, 20);
+
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableZoom = false;
+controls.enablePan = false;
+controls.maxPolarAngle = Math.PI / 2.5;
+controls.minPolarAngle = Math.PI / 2.5;
+
+const light = new THREE.DirectionalLight(0xffffff, 1);
+light.position.set(10, 20, 10);
+scene.add(light);
+
+const ambientLight = new THREE.AmbientLight(0x404040);
+scene.add(ambientLight);
+
+const COLORS = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00];
+let score = 0;
+let shots = 5;
+const scoreDisplay = document.getElementById("score");
+const shotsDisplay = document.getElementById("shots");
+
+function createBubbleMaterial(color) {
+  return new THREE.MeshPhongMaterial({ color, shininess: 50 });
+}
+
+function createBubble(color, position) {
+  const geometry = new THREE.SphereGeometry(0.5, 32, 32);
+  const material = createBubbleMaterial(color);
+  const bubble = new THREE.Mesh(geometry, material);
+  bubble.position.copy(position);
+  bubble.userData.color = color;
+  return bubble;
+}
+
+const bubbleField = [];
+for (let x = -3; x <= 3; x++) {
+  for (let y = 2; y <= 5; y++) {
+    const pos = new THREE.Vector3(x, y, 0);
+    const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+    const bubble = createBubble(color, pos);
+    scene.add(bubble);
+    bubbleField.push(bubble);
+  }
+}
+
+let currentBubble = null;
+function spawnPlayerBubble() {
+  if (currentBubble) scene.remove(currentBubble);
+  const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+  currentBubble = createBubble(color, new THREE.Vector3(0, -5, 0));
+  scene.add(currentBubble);
+}
+spawnPlayerBubble();
+
+let shootDirection = new THREE.Vector3();
+let isShooting = false;
+window.addEventListener('click', (event) => {
+  if (!isShooting && currentBubble) {
+    const mouse = new THREE.Vector2(
+      (event.clientX / window.innerWidth) * 2 - 1,
+      -(event.clientY / window.innerHeight) * 2 + 1
+    );
+    const vector = new THREE.Vector3(mouse.x, mouse.y, 0.5).unproject(camera);
+    shootDirection = vector.sub(currentBubble.position).normalize();
+    isShooting = true;
+  }
+});
+
+function detectCollision(movingBubble) {
+  for (const b of bubbleField) {
+    if (b.position.distanceTo(movingBubble.position) < 1.0) {
+      return b;
+    }
+  }
+  return null;
+}
+
+function checkAndPopClusters() {
+  const colorGroups = {};
+  for (const bubble of bubbleField) {
+    const colorKey = bubble.userData.color;
+    if (!colorGroups[colorKey]) colorGroups[colorKey] = [];
+    colorGroups[colorKey].push(bubble);
+  }
+  for (const key in colorGroups) {
+    const group = colorGroups[key];
+    if (group.length >= 3) {
+      group.forEach(b => {
+        scene.remove(b);
+        bubbleField.splice(bubbleField.indexOf(b), 1);
+      });
+      score += group.length * 10;
+      scoreDisplay.textContent = score;
+    }
+  }
+}
+
+let shotsFired = 0;
+function animate() {
+  requestAnimationFrame(animate);
+
+  if (isShooting && currentBubble) {
+    currentBubble.position.add(shootDirection.clone().multiplyScalar(0.5));
+    const hit = detectCollision(currentBubble);
+    if (hit || currentBubble.position.y > 6) {
+      isShooting = false;
+      currentBubble.position.y = Math.round(currentBubble.position.y);
+      currentBubble.position.x = Math.round(currentBubble.position.x);
+      bubbleField.push(currentBubble);
+      currentBubble = null;
+      checkAndPopClusters();
+      shotsFired++;
+      shots--;
+      shotsDisplay.textContent = shots;
+      if (shotsFired % 5 === 0) {
+        bubbleField.forEach(b => b.position.y -= 1);
+      }
+      spawnPlayerBubble();
+    }
+  }
+
+  for (const bubble of bubbleField) {
+    if (bubble.position.y <= -5) {
+      alert("Game Over!");
+      location.reload();
+    }
+  }
+
+  if (bubbleField.length === 0) {
+    alert("You Win!");
+    location.reload();
+  }
+
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
